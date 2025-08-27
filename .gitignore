@@ -1,0 +1,58 @@
+# Build directories
+build/
+build-*/
+*.build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# CEF binaries and source
+third_party/cef/
+third_party/cef_source/
+third_party/depot_tools/
+third_party/*.tar.bz2
+third_party/*.zip
+
+# Keep automate-git.py if needed
+!third_party/automate-git.py
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# WASM generated files
+*.wasm
+*.js.mem
+web/wasm_decoder.js
+web/wasm_decoder.wasm
+
+# Python virtual environment and cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
