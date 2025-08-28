@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package framedata;
+
+message Tile {
+    string tile_id = 1;
+    int32 x = 2;
+    int32 y = 3;
+    int32 width = 4;
+    int32 height = 5;
+    string codec = 6;
+    bool has_motion = 7;
+    bytes data = 8;
+    int32 size = 9;
+    int64 timestamp = 10;
+}
+
+message Frame {
+    int32 frame_id = 1;
+    int32 width = 2;
+    int32 height = 3;
+    string url = 4;
+    repeated Tile tiles = 5;
+    int32 tile_count = 6;
+    int64 timestamp = 7;
+}
+
+message StreamMessage {
+    string type = 1;
+    Frame frame = 2;
+    string status_message = 3;
+    string url = 4;
+    int32 width = 5;
+    int32 height = 6;
+}

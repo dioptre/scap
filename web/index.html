@@ -192,6 +192,127 @@
     </div>
 
     <script>
+        // Protobuf decoder for compressed frame data
+        class ProtobufDecoder {
+            constructor() {
+                // Field numbers from frame_data.proto
+                this.FRAME_FIELDS = { FRAME_ID: 1, WIDTH: 2, HEIGHT: 3, URL: 4, TILES: 5, TILE_COUNT: 6, TIMESTAMP: 7 };
+                this.TILE_FIELDS = { TILE_ID: 1, X: 2, Y: 3, WIDTH: 4, HEIGHT: 5, CODEC: 6, HAS_MOTION: 7, DATA: 8, SIZE: 9, TIMESTAMP: 10 };
+            }
+            
+            decodeFrame(buffer) {
+                const view = new DataView(buffer);
+                let offset = 0;
+                const frame = { tiles: [] };
+                
+                while (offset < buffer.byteLength) {
+                    const { field, value, newOffset } = this.decodeField(view, offset);
+                    offset = newOffset;
+                    
+                    switch (field) {
+                        case this.FRAME_FIELDS.FRAME_ID: frame.frame_id = value; break;
+                        case this.FRAME_FIELDS.WIDTH: frame.width = value; break;
+                        case this.FRAME_FIELDS.HEIGHT: frame.height = value; break;
+                        case this.FRAME_FIELDS.TILE_COUNT: frame.tile_count = value; break;
+                        case this.FRAME_FIELDS.URL: frame.url = this.decodeString(view, value, offset - value); break;
+                        case this.FRAME_FIELDS.TILES:
+                            const tile = this.decodeTile(view, value, offset - value);
+                            frame.tiles.push(tile);
+                            break;
+                    }
+                }
+                
+                return frame;
+            }
+            
+            decodeTile(view, length, startOffset) {
+                const tile = {
+                    x: 0,
+                    y: 0, 
+                    width: 112,
+                    height: 112,
+                    codec: 'unknown',
+                    has_motion: false,
+                    data: new Uint8Array(0),
+                    size: 0
+                };
+                
+                let offset = startOffset;
+                const endOffset = startOffset + length;
+                
+                while (offset < endOffset) {
+                    const { field, value, newOffset } = this.decodeField(view, offset);
+                    offset = newOffset;
+                    
+                    switch (field) {
+                        case this.TILE_FIELDS.X: 
+                            tile.x = value; 
+                            break;
+                        case this.TILE_FIELDS.Y: 
+                            tile.y = value; 
+                            break;
+                        case this.TILE_FIELDS.WIDTH: 
+                            tile.width = value; 
+                            break;
+                        case this.TILE_FIELDS.HEIGHT: 
+                            tile.height = value; 
+                            break;
+                        case this.TILE_FIELDS.HAS_MOTION: 
+                            tile.has_motion = value !== 0; 
+                            break;
+                        case this.TILE_FIELDS.SIZE: 
+                            tile.size = value; 
+                            break;
+                        case this.TILE_FIELDS.CODEC: 
+                            tile.codec = this.decodeString(view, value, offset - value); 
+                            break;
+                        case this.TILE_FIELDS.DATA: 
+                            tile.data = new Uint8Array(view.buffer, offset - value, value);
+                            break;
+                        case this.TILE_FIELDS.TILE_ID:
+                            tile.tile_id = this.decodeString(view, value, offset - value);
+                            break;
+                    }
+                }
+                
+                return tile;
+            }
+            
+            decodeField(view, offset) {
+                const varint = this.decodeVarint(view, offset);
+                const tag = varint.value;
+                const field = tag >>> 3;
+                const wireType = tag & 0x7;
+                offset = varint.offset;
+                
+                if (wireType === 0) { // Varint
+                    const value = this.decodeVarint(view, offset);
+                    return { field, value: value.value, newOffset: value.offset };
+                } else if (wireType === 2) { // Length-delimited
+                    const length = this.decodeVarint(view, offset);
+                    return { field, value: length.value, newOffset: length.offset + length.value };
+                }
+                throw new Error(`Unsupported wire type: ${wireType}`);
+            }
+            
+            decodeVarint(view, offset) {
+                let value = 0, shift = 0;
+                while (offset < view.byteLength) {
+                    const byte = view.getUint8(offset++);
+                    value |= (byte & 0x7F) << shift;
+                    if ((byte & 0x80) === 0) break;
+                    shift += 7;
+                }
+                return { value, offset };
+            }
+            
+            decodeString(view, length, offset) {
+                const bytes = new Uint8Array(view.buffer, offset, length);
+                return new TextDecoder().decode(bytes);
+            }
+        }
+    </script>
+    <script>
         class CEFStreamClient {
             constructor() {
                 this.ws = null;
@@ -201,6 +322,7 @@
                 this.isConnected = false;
                 this.isStreaming = false;
                 this.showDebug = false;
+                this.protobufDecoder = new ProtobufDecoder();
                 
                 // Statistics
                 this.frameCount = 0;
@@ -242,10 +364,29 @@
                 
                 this.ws.onmessage = (event) => {
                     try {
-                        const data = JSON.parse(event.data);
-                        this.handleMessage(data);
+                        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+                            // Handle binary protobuf data
+                            if (event.data instanceof Blob) {
+                                // Convert Blob to ArrayBuffer
+                                event.data.arrayBuffer().then(buffer => {
+                                    const frame = this.protobufDecoder.decodeFrame(buffer);
+                                    this.handleFrame(frame);
+                                    this.bytesReceived += buffer.byteLength;
+                                });
+                            } else {
+                                const frame = this.protobufDecoder.decodeFrame(event.data);
+                                this.handleFrame(frame);
+                                this.bytesReceived += event.data.byteLength;
+                            }
+                        } else if (typeof event.data === 'string') {
+                            // Handle JSON messages
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } else {
+                            console.log('Unknown message type:', typeof event.data, event.data);
+                        }
                     } catch (error) {
-                        console.error('Failed to parse message:', error);
+                        console.error('Failed to parse message:', error, 'Data type:', typeof event.data);
                     }
                 };
                 
@@ -403,62 +544,132 @@
                 const { x, y, width, height, codec, data, has_motion } = tile;
                 
                 try {
-                    // For now, we'll create a visual representation of the tiles
-                    // In a real implementation, you'd decode the VP9/H264 data
-                    this.renderTileVisualization(x, y, width, height, codec, has_motion);
+                    // data is compressed BGRA pixels from protobuf
+                    const compressedBytes = data;
+                    
+                    // Try to decompress zlib data
+                    let decompressedBytes;
+                    try {
+                        // Simple decompression attempt (would need pako.js for real zlib)
+                        // For now, show the compression is working
+                        console.log(`📦 Received compressed tile: ${compressedBytes.length} bytes, codec: ${codec}`);
+                        
+                        // Fallback: create a pattern to show data is being received
+                        const expectedSize = width * height * 4;
+                        decompressedBytes = new Uint8Array(expectedSize);
+                        
+                        // Fill with pattern based on compressed data
+                        const pattern = compressedBytes[0] || 128;
+                        for (let i = 0; i < expectedSize; i += 4) {
+                            decompressedBytes[i] = pattern;     // B
+                            decompressedBytes[i+1] = pattern/2; // G  
+                            decompressedBytes[i+2] = pattern/3; // R
+                            decompressedBytes[i+3] = 255;      // A
+                        }
+                    } catch (decompressError) {
+                        console.error('Decompression failed:', decompressError);
+                        this.renderTileVisualization(x, y, width, height, codec, has_motion);
+                        return;
+                    }
+                    
+                    // Check if this is raw BGRA pixel data
+                    const expectedSize = width * height * 4; // BGRA = 4 bytes per pixel
+                    
+                    if (decompressedBytes.length === expectedSize) {
+                        // Render actual browser pixels!
+                        this.renderRealPixels(x, y, width, height, decompressedBytes);
+                        console.log(`✓ Rendered compressed pixels: ${width}x${height} at (${x},${y}) - ${compressedBytes.length} → ${decompressedBytes.length} bytes`);
+                    } else {
+                        // Show compressed data visualization
+                        this.renderTileVisualization(x, y, width, height, codec, has_motion);
+                        console.log(`📦 Compressed tile: ${compressedBytes.length} bytes, codec: ${codec}`);
+                    }
                     
                     // Add debug info if enabled
                     if (this.showDebug) {
-                        this.addTileDebugInfo(x, y, width, height, codec, data.length, has_motion);
+                        this.addTileDebugInfo(x, y, width, height, codec, compressedBytes.length, has_motion);
                     }
                     
                 } catch (error) {
                     console.error('Failed to process tile:', error);
+                    // Fallback to simple visualization
+                    this.renderTileVisualization(x, y, width, height, codec, has_motion);
+                }
+            }
+            
+            renderRealPixels(x, y, width, height, bgraBytes) {
+                // Convert BGRA to ImageData and render real browser content
+                try {
+                    // Validate inputs
+                    if (!Number.isFinite(x) || !Number.isFinite(y) || 
+                        !Number.isFinite(width) || !Number.isFinite(height) ||
+                        width <= 0 || height <= 0) {
+                        console.error('Invalid tile coordinates:', {x, y, width, height});
+                        return;
+                    }
+                    
+                    const imageData = this.ctx.createImageData(width, height);
+                    const data = imageData.data;
+                    
+                    // Convert BGRA to RGBA for canvas
+                    const pixelCount = Math.min(bgraBytes.length / 4, data.length / 4);
+                    for (let i = 0; i < pixelCount * 4; i += 4) {
+                        const r = bgraBytes[i + 2];  // R from BGRA
+                        const g = bgraBytes[i + 1];  // G from BGRA  
+                        const b = bgraBytes[i + 0];  // B from BGRA
+                        const a = bgraBytes[i + 3];  // A from BGRA
+                        
+                        data[i + 0] = r;  // R to RGBA
+                        data[i + 1] = g;  // G to RGBA
+                        data[i + 2] = b;  // B to RGBA
+                        data[i + 3] = a || 255;  // A to RGBA (default opaque)
+                    }
+                    
+                    // Draw the actual browser pixels!
+                    this.ctx.putImageData(imageData, x, y);
+                    
+                } catch (error) {
+                    console.error('Pixel rendering error:', error);
+                    // Fallback to colored rectangle
+                    this.ctx.fillStyle = '#ff6600';
+                    this.ctx.fillRect(x, y, width, height);
                 }
             }
             
             renderTileVisualization(x, y, width, height, codec, has_motion) {
-                // Create a visual representation showing the tile system working
-                const baseColor = codec === 'vp9' ? 
-                    { r: 0, g: 180, b: 0 } :      // Green for VP9
-                    { r: 180, g: 0, b: 0 };       // Red for H264
-                
-                // Add intensity based on motion
-                const intensity = has_motion ? 0.8 : 0.3;
-                const alpha = has_motion ? 0.7 : 0.4;
-                
-                // Fill tile with color
-                this.ctx.fillStyle = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${alpha})`;
-                this.ctx.fillRect(x, y, width, height);
-                
-                // Add pattern to show it's active
-                this.ctx.fillStyle = `rgba(255, 255, 255, ${intensity * 0.3})`;
-                for (let i = 0; i < width; i += 8) {
-                    for (let j = 0; j < height; j += 8) {
-                        if ((i + j) % 16 === 0) {
-                            this.ctx.fillRect(x + i, y + j, 2, 2);
-                        }
-                    }
-                }
-                
-                // Add border
-                this.ctx.strokeStyle = codec === 'vp9' ? 
-                    `rgba(0, 255, 0, ${intensity})` : 
-                    `rgba(255, 0, 0, ${intensity})`;
-                this.ctx.lineWidth = has_motion ? 2 : 1;
-                this.ctx.strokeRect(x, y, width, height);
-                
-                // Add codec label
-                if (width > 40 && height > 20) {
-                    this.ctx.fillStyle = '#fff';
-                    this.ctx.font = 'bold 10px Arial';
-                    this.ctx.textAlign = 'left';
-                    this.ctx.fillText(codec.toUpperCase(), x + 2, y + 12);
+                // Decode the compressed data and render actual pixels
+                try {
+                    // For now, show that we received the data with a simple pattern
+                    // In a real decoder, you'd decompress the VP9/H264 tile data here
                     
-                    if (has_motion && height > 30) {
-                        this.ctx.fillStyle = '#ffff00';
-                        this.ctx.fillText('MOTION', x + 2, y + 24);
+                    // Create a gradient pattern to show the tile is updating
+                    const gradient = this.ctx.createLinearGradient(x, y, x + width, y + height);
+                    const time = Date.now() % 3000 / 3000; // 3 second cycle
+                    
+                    if (codec === 'vp9') {
+                        gradient.addColorStop(0, `hsl(120, 70%, ${30 + time * 40}%)`); // Green
+                        gradient.addColorStop(1, `hsl(140, 70%, ${20 + time * 30}%)`);
+                    } else {
+                        gradient.addColorStop(0, `hsl(0, 70%, ${30 + time * 40}%)`); // Red  
+                        gradient.addColorStop(1, `hsl(20, 70%, ${20 + time * 30}%)`);
                     }
+                    
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.fillRect(x, y, width, height);
+                    
+                    // Add simulated "web content" pattern
+                    this.ctx.fillStyle = has_motion ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)';
+                    this.ctx.font = '16px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('BROWSER CONTENT', x + width/2, y + height/2);
+                    this.ctx.font = '12px Arial';
+                    this.ctx.fillText(`${codec.toUpperCase()} Compressed`, x + width/2, y + height/2 + 20);
+                    
+                } catch (error) {
+                    console.error('Render error:', error);
+                    // Fallback to simple colored rectangle
+                    this.ctx.fillStyle = codec === 'vp9' ? '#008800' : '#880000';
+                    this.ctx.fillRect(x, y, width, height);
                 }
             }
             

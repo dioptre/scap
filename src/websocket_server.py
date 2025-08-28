@@ -19,6 +19,9 @@ import numpy as np
 # Import our CEF module
 import simple_cef
 
+# Import protobuf
+import frame_data_pb2
+
 # Video encoding imports
 try:
     import av  # PyAV for H264/VP9 encoding
@@ -84,9 +87,9 @@ class VideoEncoder:
         return self._fallback_encode(bgra_data)
     
     def _fallback_encode(self, bgra_data: np.ndarray) -> bytes:
-        """Fallback encoding without PyAV - just compress the raw data."""
+        """Fallback encoding - compress the pixel data."""
         import zlib
-        # Simple compression as fallback
+        # Compress raw BGRA pixels
         compressed = zlib.compress(bgra_data.tobytes(), level=1)
         return compressed
 
@@ -297,6 +300,21 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
     
+    async def broadcast_binary(self, data: bytes):
+        if not self.active_connections:
+            return
+        
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_bytes(data)
+            except:
+                disconnected.append(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+    
     async def start_streaming(self):
         """Start continuous frame streaming."""
         if self.streaming_active or not browser_manager:
@@ -318,19 +336,33 @@ class ConnectionManager:
                     # Reset counter when we have content
                     frames_without_content = 0
                     
-                    # Send tiles to all connected clients
-                    message = {
-                        'type': 'frame',
-                        'frame_id': browser_manager.frame_id,
-                        'width': browser_manager.width,
-                        'height': browser_manager.height,
-                        'tiles': tiles,
-                        'tile_count': len(tiles),
-                        'url': browser_manager.current_url
-                    }
+                    # Create protobuf message with compressed tiles
+                    frame_msg = frame_data_pb2.Frame()
+                    frame_msg.frame_id = browser_manager.frame_id
+                    frame_msg.width = browser_manager.width
+                    frame_msg.height = browser_manager.height
+                    frame_msg.url = browser_manager.current_url
+                    frame_msg.tile_count = len(tiles)
+                    frame_msg.timestamp = int(time.time() * 1000)
                     
-                    await self.broadcast(message)
-                    print(f"📡 Frame {frame_count}: Sent {len(tiles)} tiles to {len(self.active_connections)} clients")
+                    # Add compressed tiles to protobuf
+                    for tile_dict in tiles:
+                        tile = frame_msg.tiles.add()
+                        tile.tile_id = tile_dict['tile_id']
+                        tile.x = tile_dict['x']
+                        tile.y = tile_dict['y']
+                        tile.width = tile_dict['width']
+                        tile.height = tile_dict['height']
+                        tile.codec = tile_dict['codec']
+                        tile.has_motion = tile_dict['has_motion']
+                        tile.data = base64.b64decode(tile_dict['data'])  # Compressed bytes
+                        tile.size = tile_dict['size']
+                        tile.timestamp = tile_dict['timestamp']
+                    
+                    # Send binary protobuf
+                    binary_data = frame_msg.SerializeToString()
+                    await self.broadcast_binary(binary_data)
+                    print(f"📡 Frame {frame_count}: Sent {len(tiles)} tiles ({len(binary_data)} bytes protobuf) to {len(self.active_connections)} clients")
                     
                 else:
                     frames_without_content += 1
