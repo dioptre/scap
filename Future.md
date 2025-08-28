@@ -141,3 +141,52 @@ chome headless has a debug - and im interested in forwarding this to my clients 
 
   Recommendation: Stick with option 1 - intercept screencast frames and process them through your existing tiled_encoder.cpp compression system. This gives you the best compression without
   Chrome modifications.
+
+## Custom Screencast Format Support (Chrome Fork)
+
+Fork Chrome to add custom compression format to `Page.startScreencast`:
+
+### Implementation Plan
+
+**1. Protocol Definition** - Add custom format to enum:
+```cpp
+// browser_protocol.pdl
+enum ScreencastFormat {
+  jpeg
+  png 
+  webp
+  yourformat  # Custom format
+}
+```
+
+**2. Implementation** - Modify `page_handler.cc`:
+```cpp
+// In PageHandler::StartScreencast()
+if (format == "yourformat") {
+    // Custom encoding logic
+    encoded_data = your_custom_encoder(bitmap_data);
+    return encoded_data;
+}
+```
+
+**3. Frame Capture Pipeline** - Hook into capture system:
+```cpp
+// In ScreencastFrame generation
+void PageHandler::OnScreencastFrame(SkBitmap bitmap) {
+    if (screencast_format_ == "yourformat") {
+        auto compressed = YourCustomCompression(bitmap);
+        // Send via existing CDP event mechanism
+    }
+}
+```
+
+### Files to Modify
+- `browser_protocol.pdl` - Add format enum
+- `content/browser/devtools/protocol/page_handler.cc` - Add encoding logic
+- Rebuild protocol bindings with new format
+
+### Benefits
+- Leverage Chrome's frame capture pipeline
+- Use custom compression algorithm (tiled encoding)
+- Maintain CDP compatibility
+- Remote control via existing input methods
