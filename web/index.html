@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screen Capture Tiling System</title>
+    <title>🎬 CEF Live Stream</title>
     <style>
         body {
             margin: 0;
@@ -14,143 +14,516 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
         
-        .controls {
+        .header {
+            text-align: center;
             margin-bottom: 20px;
-            padding: 20px;
-            background: #2a2a2a;
-            border-radius: 8px;
         }
         
-        button {
-            background: #4CAF50;
+        .controls {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .controls input[type="url"] {
+            flex: 1;
+            min-width: 300px;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        .controls button {
+            padding: 10px 20px;
+            background: #007acc;
             color: white;
             border: none;
-            padding: 10px 20px;
             border-radius: 4px;
             cursor: pointer;
-            margin-right: 10px;
+            transition: background 0.3s;
         }
         
-        button:hover {
-            background: #45a049;
+        .controls button:hover {
+            background: #005a99;
         }
         
-        button:disabled {
-            background: #666;
+        .controls button:disabled {
+            background: #444;
             cursor: not-allowed;
         }
         
-        .stats {
-            display: flex;
-            gap: 20px;
+        .stream-container {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
             margin-bottom: 20px;
         }
         
-        .stat {
-            background: #333;
-            padding: 10px 15px;
-            border-radius: 4px;
-            min-width: 150px;
-        }
-        
-        .canvas-container {
-            position: relative;
-            border: 2px solid #444;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #000;
-        }
-        
-        #displayCanvas {
+        #canvas {
             width: 100%;
             height: auto;
             display: block;
+            max-width: 1920px;
+            max-height: 1080px;
+        }
+        
+        .status-bar {
+            background: #2a2a2a;
+            padding: 10px 15px;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status-label {
+            font-weight: bold;
+            color: #999;
+        }
+        
+        .status-value {
+            font-family: monospace;
+            color: #00ff00;
+        }
+        
+        .status-value.error {
+            color: #ff4444;
+        }
+        
+        .status-value.warning {
+            color: #ffaa00;
         }
         
         .tile-overlay {
             position: absolute;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            top: 0;
+            left: 0;
             pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         
-        .tile-overlay.vp9 {
-            border-color: rgba(0, 255, 0, 0.5);
+        .tile-overlay.show {
+            opacity: 0.3;
         }
         
-        .tile-overlay.h264 {
-            border-color: rgba(255, 0, 0, 0.5);
+        .tile-debug {
+            position: absolute;
+            border: 1px solid #00ff00;
+            font-size: 10px;
+            color: #00ff00;
+            background: rgba(0,0,0,0.5);
+            padding: 2px;
         }
         
-        .log {
-            margin-top: 20px;
-            padding: 15px;
-            background: #2a2a2a;
-            border-radius: 8px;
-            height: 200px;
-            overflow-y: scroll;
-            font-family: monospace;
-            font-size: 12px;
+        .controls .debug-toggle {
+            background: #444;
         }
         
-        .log-entry {
-            margin: 2px 0;
-        }
-        
-        .log-entry.error {
-            color: #ff6b6b;
-        }
-        
-        .log-entry.success {
-            color: #51cf66;
-        }
-        
-        .log-entry.info {
-            color: #74c0fc;
+        .controls .debug-toggle.active {
+            background: #00aa00;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Screen Capture Tiling System</h1>
+        <div class="header">
+            <h1>🎬 CEF Live Stream</h1>
+            <p>Real-time browser streaming with VP9/H264 tiling</p>
+        </div>
         
         <div class="controls">
-            <button id="startBtn">Start Screen Capture</button>
-            <button id="stopBtn" disabled>Stop Capture</button>
-            <button id="clearBtn">Clear Display</button>
-            
-            <div class="stats">
-                <div class="stat">
-                    <div>Frame Rate: <span id="frameRate">0</span> FPS</div>
-                </div>
-                <div class="stat">
-                    <div>Tiles/Frame: <span id="tileCount">0</span></div>
-                </div>
-                <div class="stat">
-                    <div>VP9 Tiles: <span id="vp9Count">0</span></div>
-                </div>
-                <div class="stat">
-                    <div>H.264 Tiles: <span id="h264Count">0</span></div>
-                </div>
-                <div class="stat">
-                    <div>Connection: <span id="connectionStatus">Disconnected</span></div>
-                </div>
+            <input type="url" id="urlInput" placeholder="Enter URL to stream (e.g., https://www.google.com)" 
+                   value="https://www.example.com">
+            <button id="startBtn">Start Stream</button>
+            <button id="stopBtn" disabled>Stop Stream</button>
+            <button id="debugBtn" class="debug-toggle">Debug Tiles</button>
+        </div>
+        
+        <div class="stream-container">
+            <canvas id="canvas" width="1920" height="1080"></canvas>
+            <div class="tile-overlay" id="tileOverlay"></div>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">Connection:</span>
+                <span class="status-value" id="connectionStatus">Disconnected</span>
             </div>
-        </div>
-        
-        <div class="canvas-container" id="canvasContainer">
-            <canvas id="displayCanvas" width="1920" height="1080"></canvas>
-        </div>
-        
-        <div class="log" id="logContainer">
-            <div class="log-entry info">System initialized. Click 'Start Screen Capture' to begin.</div>
+            <div class="status-item">
+                <span class="status-label">Frame Rate:</span>
+                <span class="status-value" id="frameRate">0 FPS</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Current Frame:</span>
+                <span class="status-value" id="currentFrame">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Tiles Received:</span>
+                <span class="status-value" id="tilesReceived">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Data Rate:</span>
+                <span class="status-value" id="dataRate">0 KB/s</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">VP9/H264 Ratio:</span>
+                <span class="status-value" id="codecRatio">0/0</span>
+            </div>
         </div>
     </div>
 
-    <script src="wasm_decoder.js"></script>
-    <script src="main.js"></script>
+    <script>
+        class CEFStreamClient {
+            constructor() {
+                this.ws = null;
+                this.canvas = document.getElementById('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.tileOverlay = document.getElementById('tileOverlay');
+                this.isConnected = false;
+                this.isStreaming = false;
+                this.showDebug = false;
+                
+                // Statistics
+                this.frameCount = 0;
+                this.startTime = Date.now();
+                this.lastFrameTime = Date.now();
+                this.bytesReceived = 0;
+                this.codecStats = { vp9: 0, h264: 0 };
+                
+                this.setupEventListeners();
+                this.updateStatus();
+            }
+            
+            setupEventListeners() {
+                document.getElementById('startBtn').addEventListener('click', () => this.startStream());
+                document.getElementById('stopBtn').addEventListener('click', () => this.stopStream());
+                document.getElementById('debugBtn').addEventListener('click', () => this.toggleDebug());
+                
+                // Enter key on URL input
+                document.getElementById('urlInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.startStream();
+                    }
+                });
+            }
+            
+            connect() {
+                if (this.ws) return;
+                
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+                
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.isConnected = true;
+                    this.updateConnectionStatus('Connected', false);
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (error) {
+                        console.error('Failed to parse message:', error);
+                    }
+                };
+                
+                // Send periodic ping to keep connection alive
+                this.pingInterval = setInterval(() => {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({type: 'ping'}));
+                    }
+                }, 5000);
+                
+                this.ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.isConnected = false;
+                    this.isStreaming = false;
+                    this.ws = null;
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
+                    this.updateConnectionStatus('Disconnected', true);
+                    this.updateButtons();
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateConnectionStatus('Error', true);
+                };
+            }
+            
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+            }
+            
+            startStream() {
+                const url = document.getElementById('urlInput').value.trim();
+                if (!url) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+                
+                if (!this.isConnected) {
+                    this.connect();
+                }
+                
+                // Wait for connection, then start streaming
+                const startWhenConnected = () => {
+                    if (this.isConnected && this.ws) {
+                        const message = {
+                            type: 'start_stream',
+                            url: url
+                        };
+                        this.ws.send(JSON.stringify(message));
+                        this.resetStats();
+                        this.updateButtons();
+                    } else if (this.ws) {
+                        setTimeout(startWhenConnected, 100);
+                    }
+                };
+                
+                startWhenConnected();
+            }
+            
+            stopStream() {
+                if (this.ws) {
+                    const message = { type: 'stop_stream' };
+                    this.ws.send(JSON.stringify(message));
+                }
+                this.isStreaming = false;
+                this.updateButtons();
+            }
+            
+            toggleDebug() {
+                this.showDebug = !this.showDebug;
+                const debugBtn = document.getElementById('debugBtn');
+                debugBtn.classList.toggle('active', this.showDebug);
+                this.tileOverlay.classList.toggle('show', this.showDebug);
+            }
+            
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'status':
+                        console.log('Status:', data.message);
+                        break;
+                        
+                    case 'stream_started':
+                        console.log('Stream started:', data.url);
+                        this.isStreaming = true;
+                        this.updateButtons();
+                        this.resizeCanvas(data.width, data.height);
+                        break;
+                        
+                    case 'stream_stopped':
+                        console.log('Stream stopped');
+                        this.isStreaming = false;
+                        this.updateButtons();
+                        break;
+                        
+                    case 'frame':
+                        this.handleFrame(data);
+                        break;
+                        
+                    case 'error':
+                        console.error('Server error:', data.message);
+                        this.updateConnectionStatus(`Error: ${data.message}`, true);
+                        break;
+                        
+                    case 'pong':
+                        // Handle ping response if needed
+                        break;
+                }
+            }
+            
+            resizeCanvas(width, height) {
+                this.canvas.width = width;
+                this.canvas.height = height;
+                
+                // Clear canvas with dark background
+                this.ctx.fillStyle = '#222';
+                this.ctx.fillRect(0, 0, width, height);
+                
+                // Add "Loading..." text
+                this.ctx.fillStyle = '#666';
+                this.ctx.font = '48px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('Loading browser content...', width/2, height/2);
+            }
+            
+            handleFrame(frameData) {
+                this.frameCount++;
+                this.lastFrameTime = Date.now();
+                
+                const { frame_id, width, height, tiles, tile_count } = frameData;
+                
+                // Clear tile overlay
+                this.tileOverlay.innerHTML = '';
+                
+                // Clear canvas for this frame
+                this.ctx.fillStyle = '#000';
+                this.ctx.fillRect(0, 0, width, height);
+                
+                // Process each tile
+                tiles.forEach(tile => {
+                    this.processTile(tile);
+                    this.bytesReceived += tile.size;
+                    this.codecStats[tile.codec]++;
+                });
+                
+                this.updateStatus();
+            }
+            
+            processTile(tile) {
+                const { x, y, width, height, codec, data, has_motion } = tile;
+                
+                try {
+                    // For now, we'll create a visual representation of the tiles
+                    // In a real implementation, you'd decode the VP9/H264 data
+                    this.renderTileVisualization(x, y, width, height, codec, has_motion);
+                    
+                    // Add debug info if enabled
+                    if (this.showDebug) {
+                        this.addTileDebugInfo(x, y, width, height, codec, data.length, has_motion);
+                    }
+                    
+                } catch (error) {
+                    console.error('Failed to process tile:', error);
+                }
+            }
+            
+            renderTileVisualization(x, y, width, height, codec, has_motion) {
+                // Create a visual representation showing the tile system working
+                const baseColor = codec === 'vp9' ? 
+                    { r: 0, g: 180, b: 0 } :      // Green for VP9
+                    { r: 180, g: 0, b: 0 };       // Red for H264
+                
+                // Add intensity based on motion
+                const intensity = has_motion ? 0.8 : 0.3;
+                const alpha = has_motion ? 0.7 : 0.4;
+                
+                // Fill tile with color
+                this.ctx.fillStyle = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${alpha})`;
+                this.ctx.fillRect(x, y, width, height);
+                
+                // Add pattern to show it's active
+                this.ctx.fillStyle = `rgba(255, 255, 255, ${intensity * 0.3})`;
+                for (let i = 0; i < width; i += 8) {
+                    for (let j = 0; j < height; j += 8) {
+                        if ((i + j) % 16 === 0) {
+                            this.ctx.fillRect(x + i, y + j, 2, 2);
+                        }
+                    }
+                }
+                
+                // Add border
+                this.ctx.strokeStyle = codec === 'vp9' ? 
+                    `rgba(0, 255, 0, ${intensity})` : 
+                    `rgba(255, 0, 0, ${intensity})`;
+                this.ctx.lineWidth = has_motion ? 2 : 1;
+                this.ctx.strokeRect(x, y, width, height);
+                
+                // Add codec label
+                if (width > 40 && height > 20) {
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.textAlign = 'left';
+                    this.ctx.fillText(codec.toUpperCase(), x + 2, y + 12);
+                    
+                    if (has_motion && height > 30) {
+                        this.ctx.fillStyle = '#ffff00';
+                        this.ctx.fillText('MOTION', x + 2, y + 24);
+                    }
+                }
+            }
+            
+            addTileDebugInfo(x, y, width, height, codec, dataSize, has_motion) {
+                const debugDiv = document.createElement('div');
+                debugDiv.className = 'tile-debug';
+                const canvasRect = this.canvas.getBoundingClientRect();
+                const scaleX = canvasRect.width / this.canvas.width;
+                const scaleY = canvasRect.height / this.canvas.height;
+                
+                debugDiv.style.left = `${x * scaleX}px`;
+                debugDiv.style.top = `${y * scaleY}px`;
+                debugDiv.innerHTML = `${codec.toUpperCase()}<br>${dataSize}B<br>${has_motion ? 'M' : 'S'}`;
+                this.tileOverlay.appendChild(debugDiv);
+            }
+            
+            resetStats() {
+                this.frameCount = 0;
+                this.startTime = Date.now();
+                this.lastFrameTime = Date.now();
+                this.bytesReceived = 0;
+                this.codecStats = { vp9: 0, h264: 0 };
+            }
+            
+            updateStatus() {
+                const now = Date.now();
+                const elapsed = (now - this.startTime) / 1000;
+                const fps = elapsed > 0 ? (this.frameCount / elapsed).toFixed(1) : 0;
+                const kbps = elapsed > 0 ? ((this.bytesReceived / 1024) / elapsed).toFixed(1) : 0;
+                
+                document.getElementById('currentFrame').textContent = this.frameCount;
+                document.getElementById('frameRate').textContent = `${fps} FPS`;
+                document.getElementById('tilesReceived').textContent = 
+                    this.codecStats.vp9 + this.codecStats.h264;
+                document.getElementById('dataRate').textContent = `${kbps} KB/s`;
+                document.getElementById('codecRatio').textContent = 
+                    `${this.codecStats.vp9}/${this.codecStats.h264}`;
+            }
+            
+            updateConnectionStatus(status, isError) {
+                const element = document.getElementById('connectionStatus');
+                element.textContent = status;
+                element.className = 'status-value' + (isError ? ' error' : '');
+            }
+            
+            updateButtons() {
+                const startBtn = document.getElementById('startBtn');
+                const stopBtn = document.getElementById('stopBtn');
+                
+                startBtn.disabled = this.isStreaming;
+                stopBtn.disabled = !this.isStreaming;
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            const client = new CEFStreamClient();
+            
+            // Update status every second
+            setInterval(() => {
+                if (client.isConnected) {
+                    client.updateStatus();
+                }
+            }, 1000);
+        });
+    </script>
 </body>
 </html>

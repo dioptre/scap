@@ -1,6 +1,8 @@
 #include "simple_cef_browser.h"
 #include "include/cef_sandbox_mac.h"
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 SimpleCefBrowser::SimpleCefBrowser(int width, int height) 
     : width_(width), height_(height), is_initialized_(false) {
@@ -20,11 +22,15 @@ bool SimpleCefBrowser::Initialize() {
         return true;
     }
 
-    // CEF settings
+    // CEF settings for headless rendering
     CefSettings settings;
     settings.no_sandbox = true;
     settings.windowless_rendering_enabled = true;
-    settings.log_severity = LOGSEVERITY_INFO;
+    settings.log_severity = LOGSEVERITY_WARNING;
+    
+    // Essential headless settings
+    CefString(&settings.cache_path).FromString("/tmp/cef_cache");
+    settings.multi_threaded_message_loop = false;
     
     // Initialize CEF
     CefRefPtr<CefApp> app(new SimpleCefApp());
@@ -33,16 +39,42 @@ bool SimpleCefBrowser::Initialize() {
         return false;
     }
 
-    // Create browser window info
+    // Create browser window info for headless
     CefWindowInfo window_info;
     window_info.SetAsWindowless(0); // 0 = no parent window for headless
-
+    
+    // Set bounds for rendering
+    CefRect rect;
+    rect.x = 0;
+    rect.y = 0; 
+    rect.width = width_;
+    rect.height = height_;
+    
     // Browser settings
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 30; // 30 FPS
+    browser_settings.background_color = CefColorSetARGB(255, 255, 255, 255); // White background
 
-    // Create browser
-    CefBrowserHost::CreateBrowser(window_info, this, "about:blank", browser_settings, nullptr, nullptr);
+    // Create browser - this is async!
+    if (!CefBrowserHost::CreateBrowser(window_info, this, "about:blank", browser_settings, nullptr, nullptr)) {
+        std::cerr << "Failed to create CEF browser" << std::endl;
+        CefShutdown();
+        return false;
+    }
+    
+    // Wait for browser to be created (with timeout)
+    int timeout = 50; // 5 seconds
+    while (!browser_ && timeout > 0) {
+        CefDoMessageLoopWork();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        timeout--;
+    }
+    
+    if (!browser_) {
+        std::cerr << "Browser creation timed out" << std::endl;
+        CefShutdown();
+        return false;
+    }
     
     is_initialized_ = true;
     return true;
