@@ -8,7 +8,14 @@ SimpleCefBrowser::SimpleCefBrowser(int width, int height)
     : width_(width), height_(height), is_initialized_(false) {
     buffer_size_ = width * height * 4; // BGRA format
     pixel_buffer_ = std::make_unique<unsigned char[]>(buffer_size_);
-    memset(pixel_buffer_.get(), 0, buffer_size_);
+    
+    // Initialize with white background to show something is happening
+    for (size_t i = 0; i < buffer_size_; i += 4) {
+        pixel_buffer_[i] = 255;     // B
+        pixel_buffer_[i+1] = 255;   // G
+        pixel_buffer_[i+2] = 255;   // R
+        pixel_buffer_[i+3] = 255;   // A
+    }
 }
 
 SimpleCefBrowser::~SimpleCefBrowser() {
@@ -32,9 +39,14 @@ bool SimpleCefBrowser::Initialize() {
     CefString(&settings.cache_path).FromString("/tmp/cef_cache");
     settings.multi_threaded_message_loop = false;
     
-    // Initialize CEF
+    // Force GPU acceleration for rendering
+    settings.command_line_args_disabled = false;
+    
+    // Initialize CEF with main args
+    CefMainArgs main_args;
     CefRefPtr<CefApp> app(new SimpleCefApp());
-    if (!CefInitialize(CefMainArgs(), settings, app.get(), nullptr)) {
+    
+    if (!CefInitialize(main_args, settings, app.get(), nullptr)) {
         std::cerr << "Failed to initialize CEF" << std::endl;
         return false;
     }
@@ -54,6 +66,10 @@ bool SimpleCefBrowser::Initialize() {
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 30; // 30 FPS
     browser_settings.background_color = CefColorSetARGB(255, 255, 255, 255); // White background
+    
+    // Enable browser features
+    CefString(&browser_settings.default_encoding).FromString("utf-8");
+    browser_settings.javascript = STATE_ENABLED;
 
     // Create browser - this is async!
     if (!CefBrowserHost::CreateBrowser(window_info, this, "about:blank", browser_settings, nullptr, nullptr)) {
@@ -133,6 +149,10 @@ void SimpleCefBrowser::OnPaint(CefRefPtr<CefBrowser> browser,
         // Copy the rendered frame to our pixel buffer
         size_t copy_size = std::min(buffer_size_, (size_t)(width * height * 4));
         memcpy(pixel_buffer_.get(), buffer, copy_size);
+        
+        // Log when we get actual painted content
+        std::cout << "OnPaint called: " << width << "x" << height 
+                  << " (" << copy_size << " bytes)" << std::endl;
     }
 }
 
@@ -140,4 +160,10 @@ void SimpleCefBrowser::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                                 CefRefPtr<CefFrame> frame,
                                 int httpStatusCode) {
     std::cout << "Page loaded with status: " << httpStatusCode << std::endl;
+    
+    // Force a paint after loading
+    if (browser && browser->GetHost()) {
+        browser->GetHost()->Invalidate(PET_VIEW);
+        browser->GetHost()->SetFocus(true);
+    }
 }

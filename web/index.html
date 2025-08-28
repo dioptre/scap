@@ -191,6 +191,8 @@
         </div>
     </div>
 
+    <!-- Add pako for zlib decompression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script>
         // Protobuf decoder for compressed frame data
         class ProtobufDecoder {
@@ -365,18 +367,17 @@
                 this.ws.onmessage = (event) => {
                     try {
                         if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-                            // Handle binary protobuf data
+                            // Handle binary protobuf data - track actual socket transfer
                             if (event.data instanceof Blob) {
-                                // Convert Blob to ArrayBuffer
+                                this.bytesReceived += event.data.size; // Track blob size
                                 event.data.arrayBuffer().then(buffer => {
                                     const frame = this.protobufDecoder.decodeFrame(buffer);
                                     this.handleFrame(frame);
-                                    this.bytesReceived += buffer.byteLength;
                                 });
                             } else {
+                                this.bytesReceived += event.data.byteLength; // Track buffer size
                                 const frame = this.protobufDecoder.decodeFrame(event.data);
                                 this.handleFrame(frame);
-                                this.bytesReceived += event.data.byteLength;
                             }
                         } else if (typeof event.data === 'string') {
                             // Handle JSON messages
@@ -530,10 +531,9 @@
                 this.ctx.fillStyle = '#000';
                 this.ctx.fillRect(0, 0, width, height);
                 
-                // Process each tile
+                // Process each tile (don't double-count bytes - already counted in onmessage)
                 tiles.forEach(tile => {
                     this.processTile(tile);
-                    this.bytesReceived += tile.size;
                     this.codecStats[tile.codec]++;
                 });
                 
@@ -547,29 +547,32 @@
                     // data is compressed BGRA pixels from protobuf
                     const compressedBytes = data;
                     
-                    // Try to decompress zlib data
+                    // Decompress zlib data to get actual browser pixels
                     let decompressedBytes;
                     try {
-                        // Simple decompression attempt (would need pako.js for real zlib)
-                        // For now, show the compression is working
-                        console.log(`📦 Received compressed tile: ${compressedBytes.length} bytes, codec: ${codec}`);
+                        // Use pako to decompress zlib data
+                        if (typeof pako !== 'undefined') {
+                            decompressedBytes = pako.inflate(compressedBytes);
+                            console.log(`✓ Decompressed tile: ${compressedBytes.length} → ${decompressedBytes.length} bytes`);
+                        } else {
+                            throw new Error('Pako not loaded');
+                        }
+                    } catch (decompressError) {
+                        console.error('Decompression failed:', decompressError);
                         
                         // Fallback: create a pattern to show data is being received
                         const expectedSize = width * height * 4;
                         decompressedBytes = new Uint8Array(expectedSize);
                         
-                        // Fill with pattern based on compressed data
+                        // Fill with pattern based on compressed data to show it's working
                         const pattern = compressedBytes[0] || 128;
                         for (let i = 0; i < expectedSize; i += 4) {
-                            decompressedBytes[i] = pattern;     // B
-                            decompressedBytes[i+1] = pattern/2; // G  
-                            decompressedBytes[i+2] = pattern/3; // R
+                            decompressedBytes[i] = 0;           // B
+                            decompressedBytes[i+1] = 0;        // G  
+                            decompressedBytes[i+2] = pattern;  // R (red to show fallback)
                             decompressedBytes[i+3] = 255;      // A
                         }
-                    } catch (decompressError) {
-                        console.error('Decompression failed:', decompressError);
-                        this.renderTileVisualization(x, y, width, height, codec, has_motion);
-                        return;
+                        console.log(`📦 Using fallback pattern for ${compressedBytes.length} compressed bytes`);
                     }
                     
                     // Check if this is raw BGRA pixel data
@@ -704,7 +707,7 @@
                 document.getElementById('frameRate').textContent = `${fps} FPS`;
                 document.getElementById('tilesReceived').textContent = 
                     this.codecStats.vp9 + this.codecStats.h264;
-                document.getElementById('dataRate').textContent = `${kbps} KB/s`;
+                document.getElementById('dataRate').textContent = `${kbps} KB/s (protobuf)`;
                 document.getElementById('codecRatio').textContent = 
                     `${this.codecStats.vp9}/${this.codecStats.h264}`;
             }

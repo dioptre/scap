@@ -23,20 +23,36 @@ if [ $? -eq 0 ]; then
     echo "Build successful!"
     echo "Python module: build/simple_cef*.so"
     
-    # Copy module to tests directory for easy testing
+    # Fix library paths for macOS
+    echo "Fixing library paths..."
+    install_name_tool -change "@executable_path/../Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework" "@loader_path/Chromium Embedded Framework.framework/Chromium Embedded Framework" simple_cef*.so
+    
+    # Code sign for macOS security
+    echo "Code signing..."
+    codesign --force --sign - simple_cef*.so
+    codesign --force --sign - ../third_party/cef/Release/Chromium\ Embedded\ Framework.framework/Chromium\ Embedded\ Framework
+    
+    # Copy module and framework
+    cp simple_cef*.so ../
+    cp simple_cef*.so ../src/
     cp simple_cef*.so ../tests/
-    echo "Module copied to tests/ directory"
+    cp -r ../third_party/cef/Release/Chromium\ Embedded\ Framework.framework ../
+    cp -r ../third_party/cef/Release/Chromium\ Embedded\ Framework.framework ../src/
+    cp -r ../third_party/cef/Release/Chromium\ Embedded\ Framework.framework ../tests/
+    
+    echo "Module copied to all directories"
+    
+    # Generate protobuf files
+    echo "Generating protobuf files..."
+    protoc --python_out=src src/frame_data.proto
     
     echo ""
-    echo "To test, run:"
-    echo "  cd tests"  
-    echo "  source ../.venv/bin/activate"
-    echo "  DYLD_FRAMEWORK_PATH=. python test_simple_import.py"
+    echo "✅ Build complete!"
+    echo "To run server:"
+    echo "  source .venv/bin/activate"
+    echo "  cd src && python websocket_server.py"
     echo ""
-    echo "Module successfully built!"
-    echo "- SimpleCefBrowser(width, height) - creates headless browser"
-    echo "- get_pixel_buffer() - returns raw BGRA pixel array"
-    echo "- Direct memory access for video streaming"
+    echo "Or use: python start_server.py"
 else
     echo "Build failed!"
     exit 1

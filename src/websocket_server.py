@@ -253,7 +253,7 @@ class CEFBrowserManager:
 app = FastAPI(title="CEF Screen Capture with VP9/H264 Tiling")
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="web"), name="static")
+app.mount("/static", StaticFiles(directory="../web"), name="static")
 
 # Global browser manager
 browser_manager = None
@@ -404,7 +404,7 @@ async def startup_event():
 async def get_index():
     """Serve main HTML page."""
     try:
-        with open("web/index.html", "r") as f:
+        with open("../web/index.html", "r") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse(content="""
