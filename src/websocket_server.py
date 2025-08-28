@@ -152,7 +152,7 @@ class CEFBrowserManager:
         self.browser = None
         self.is_initialized = False
         self.current_url = "about:blank"
-        self.tile_processor = TileProcessor(64)  # Smaller tiles = faster processing
+        self.tile_processor = TileProcessor(112)  # Larger tiles = fewer tiles to process
         self.frame_id = 0
         
         # Initialize browser in separate thread to avoid blocking
@@ -365,7 +365,7 @@ manager = ConnectionManager()
 async def startup_event():
     """Initialize CEF browser on startup."""
     global browser_manager
-    browser_manager = CEFBrowserManager(1920, 1080)
+    browser_manager = CEFBrowserManager(900, 600)
     print("✓ CEF Browser Manager initialized")
 
 @app.get("/")
