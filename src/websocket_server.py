@@ -16,8 +16,10 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 import numpy as np
 
-# Import our CEF module
-import simple_cef
+# Import pyppeteer for working headless browser
+import asyncio
+from pyppeteer import launch
+# import simple_cef  # Disabled - using pyppeteer instead
 
 # Import protobuf
 import frame_data_pb2
@@ -329,7 +331,7 @@ class ConnectionManager:
         while self.streaming_active and self.active_connections:
             try:
                 # Capture frame
-                pixels, tiles = browser_manager.capture_frame()
+                pixels, tiles = await browser_manager.capture_frame()
                 frame_count += 1
                 
                 if tiles and len(tiles) > 0:
@@ -397,7 +399,9 @@ manager = ConnectionManager()
 async def startup_event():
     """Initialize CEF browser on startup."""
     global browser_manager
-    browser_manager = CEFBrowserManager(900, 600)
+    from pyppeteer_browser_manager import PyppeteerBrowserManager
+    browser_manager = PyppeteerBrowserManager(900, 600)
+    await browser_manager.init_browser()
     print("✓ CEF Browser Manager initialized")
 
 @app.get("/")
@@ -451,7 +455,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if message['type'] == 'start_stream':
                 url = message.get('url', 'https://www.example.com')
                 
-                if browser_manager and browser_manager.load_url(url):
+                if browser_manager and await browser_manager.load_url(url):
                     await manager.send_personal_message({
                         'type': 'status',
                         'message': f'Loading {url}...'

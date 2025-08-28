@@ -82,3 +82,10 @@ The `download_cef_direct.sh` script automatically detects:
 - Frame rate: 10 FPS backend (configurable)
 - Compression: zlib level 1 (fast)
 - Protocol: Binary protobuf (~12KB vs 14MB JSON)
+
+## Also might work
+
+```sh
+g++ -std=c++17 -I ../third_party/cef/include -I ../third_party/cef simple_test.cpp ../third_party/cef/build/libcef_dll_wrapper/libcef_dll_wrapper.a -F .. -framework "Chromium Embedded
+      Framework" -framework Cocoa -framework AppKit -rpath @executable_path -o simple_test && DYLD_FRAMEWORK_PATH=.. ./simple_test
+```
