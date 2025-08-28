@@ -12,7 +12,7 @@ Makefile
 !CMakeLists.txt
 
 # CEF binaries and source
-third_party/cef/
+third_party/cef*
 third_party/cef_source/
 third_party/depot_tools/
 third_party/*.tar.bz2

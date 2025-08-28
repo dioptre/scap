@@ -16,9 +16,22 @@ if [ -d "cef" ]; then
     rm -rf cef
 fi
 
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "arm64" ]; then
+    CEF_ARCH="macosarm64"
+    echo "Detected Apple Silicon (ARM64)"
+elif [ "$ARCH" = "x86_64" ]; then
+    CEF_ARCH="macosx64" 
+    echo "Detected Intel (x86_64)"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
 # Use a specific known working version
 CEF_VERSION="119.4.7+g55e15c8+chromium-119.0.6045.199"
-CEF_FILE="cef_binary_${CEF_VERSION}_macosx64.tar.bz2"
+CEF_FILE="cef_binary_${CEF_VERSION}_${CEF_ARCH}.tar.bz2"
 
 echo "Downloading CEF $CEF_VERSION..."
 
